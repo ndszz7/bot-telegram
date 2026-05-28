@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const express = require('express');
 
-// SERVIDOR WEB PRA RENDER + UPTIMEROBOT
+// EXPRESS
 const app = express();
 
 app.get('/', (req, res) => {
@@ -15,94 +15,103 @@ app.listen(process.env.PORT || 3000, () => {
   console.log('🌐 Web server online');
 });
 
-// TOKEN DO BOT
-const token = '8995772558:AAFb8dmgIymDue5b_okh_0N3bMI1onuScCk';
+// TOKEN
+const token = '8995772558:AAFRI3HbYzX1axKGRkEo2seMbLZ5LItrGgU';
 
+// BOT
 const bot = new TelegramBot(token, {
-  polling: true
+  polling: {
+    interval: 300,
+    autoStart: true,
+    params: {
+      timeout: 10
+    }
+  }
 });
 
 console.log('🤖 Bot online...');
 
+// ERROS
+bot.on('polling_error', (error) => {
+  console.log('Polling Error:', error.message);
+});
+
+bot.on('webhook_error', (error) => {
+  console.log('Webhook Error:', error.message);
+});
+
+// MENSAGENS
 bot.on('message', async (msg) => {
 
-  const chatId = msg.chat.id;
-  const text = msg.text;
+  try {
 
-  if (!text) return;
+    const chatId = msg.chat.id;
+    const text = msg.text;
 
-  // VERIFICA LINKS
-  const isTikTok =
-    text.includes('tiktok.com') ||
-    text.includes('vm.tiktok.com') ||
-    text.includes('vt.tiktok.com');
+    if (!text) return;
 
-  const isInstagram =
-    text.includes('instagram.com');
+    // LINKS
+    const isTikTok =
+      text.includes('tiktok.com') ||
+      text.includes('vm.tiktok.com') ||
+      text.includes('vt.tiktok.com');
 
-  if (!isTikTok && !isInstagram) {
+    const isInstagram =
+      text.includes('instagram.com');
 
-    bot.sendMessage(
-      chatId,
-      '📎 Envie um link do TikTok ou Instagram.'
-    );
+    if (!isTikTok && !isInstagram) {
 
-    return;
-  }
-
-  // MENSAGEM LOADING
-  const loading = await bot.sendMessage(
-    chatId,
-    '📥 Baixando vídeo em HD...'
-  );
-
-  // PASTA DOWNLOADS
-  const downloadsDir =
-    path.join(__dirname, 'downloads');
-
-  if (!fs.existsSync(downloadsDir)) {
-    fs.mkdirSync(downloadsDir);
-  }
-
-  // NOME DO ARQUIVO
-  const fileName =
-    path.join(
-      downloadsDir,
-      `video_${Date.now()}.mp4`
-    );
-
-  // COMANDO YT-DLP
-  const command =
-    `yt-dlp -f mp4 ` +
-    `--no-playlist ` +
-    `--force-overwrites ` +
-    `-o "${fileName}" "${text}"`;
-
-  // EXECUTA DOWNLOAD
-  exec(command, async (error, stdout, stderr) => {
-
-    if (error) {
-
-      console.log(stderr);
-
-      bot.editMessageText(
-        '❌ Erro ao baixar vídeo.',
-        {
-          chat_id: chatId,
-          message_id: loading.message_id
-        }
+      bot.sendMessage(
+        chatId,
+        '📎 Envie um link do TikTok ou Instagram.'
       );
 
       return;
     }
 
-    try {
+    // LOADING
+    const loading = await bot.sendMessage(
+      chatId,
+      '📥 Baixando vídeo em HD...'
+    );
 
-      // VERIFICA SE EXISTE
-      if (!fs.existsSync(fileName)) {
+    // PASTA DOWNLOADS
+    const downloadsDir =
+      path.join(__dirname, 'downloads');
+
+    if (!fs.existsSync(downloadsDir)) {
+      fs.mkdirSync(downloadsDir);
+    }
+
+    // NOME
+    const uniqueName =
+      `video_${Date.now()}`;
+
+    const outputTemplate =
+      path.join(
+        downloadsDir,
+        `${uniqueName}.%(ext)s`
+      );
+
+    // COMANDO
+    const command =
+      `yt-dlp ` +
+      `-f mp4 ` +
+      `--no-playlist ` +
+      `--force-overwrites ` +
+      `-o "${outputTemplate}" "${text}"`;
+
+    console.log(command);
+
+    // DOWNLOAD
+    exec(command, async (error, stdout, stderr) => {
+
+      if (error) {
+
+        console.log(stderr);
 
         bot.editMessageText(
-          '❌ Arquivo não encontrado.',
+          '❌ Erro ao baixar vídeo.',
           {
             chat_id: chatId,
             message_id: loading.message_id
@@ -112,39 +121,71 @@ bot.on('message', async (msg) => {
         return;
       }
 
-      // ALTERA MENSAGEM
-      await bot.editMessageText(
-        '🚀 Enviando vídeo...',
-        {
-          chat_id: chatId,
-          message_id: loading.message_id
+      try {
+
+        // PROCURA ARQUIVO
+        const files =
+          fs.readdirSync(downloadsDir);
+
+        const foundVideo =
+          files.find(file =>
+            file.startsWith(uniqueName)
+          );
+
+        if (!foundVideo) {
+
+          bot.editMessageText(
+            '❌ Arquivo não encontrado.',
+            {
+              chat_id: chatId,
+              message_id: loading.message_id
+            }
+          );
+
+          return;
         }
-      );
 
-      // ENVIA VIDEO
-      await bot.sendVideo(
-        chatId,
-        fileName,
-        {
-          caption: '✅ Vídeo baixado em HD',
-          supports_streaming: true
-        }
-      );
+        const videoPath =
+          path.join(downloadsDir, foundVideo);
 
-      // REMOVE VIDEO
-      fs.unlinkSync(fileName);
+        // ENVIO
+        await bot.editMessageText(
+          '🚀 Enviando vídeo...',
+          {
+            chat_id: chatId,
+            message_id: loading.message_id
+          }
+        );
 
-    } catch (err) {
+        await bot.sendVideo(
+          chatId,
+          videoPath,
+          {
+            caption: '✅ Vídeo baixado em HD',
+            supports_streaming: true
+          }
+        );
 
-      console.log(err);
+        // REMOVE
+        fs.unlinkSync(videoPath);
 
-      bot.sendMessage(
-        chatId,
-        '❌ Erro ao enviar vídeo.'
-      );
+      } catch (err) {
 
-    }
+        console.log(err);
 
-  });
+        bot.sendMessage(
+          chatId,
+          '❌ Erro ao enviar vídeo.'
+        );
+
+      }
+
+    });
+
+  } catch (err) {
+
+    console.log(err);
+
+  }
 
 });
