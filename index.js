@@ -63,7 +63,7 @@ bot.on('message', async (msg) => {
 
       bot.sendMessage(
         chatId,
-        '📎 Envie um link do TikTok ou Instagram.'
+        '📎 Envie um link do TikTok.'
       );
 
       return;
