@@ -33,27 +33,45 @@ function getSupportedMediaUrl(input) {
   return isTikTok || isInstagram ? url.toString() : null;
 }
 
-async function downloadVideo(url, directory) {
-  const outputTemplate = path.join(directory, '%(id)s.%(ext)s');
-  await execFileAsync(
-    'yt-dlp',
-    [
-      '--no-playlist',
-      '--no-progress',
-      '--format',
-      'best[ext=mp4]/best',
-      '--merge-output-format',
-      'mp4',
-      '--output',
-      outputTemplate,
-      url
-    ],
-    {
-      timeout: DOWNLOAD_TIMEOUT_MS,
-      maxBuffer: 2 * 1024 * 1024,
-      windowsHide: true
-    }
+function shouldRetryWithImpersonation(error) {
+  return /\b(?:403|429)\b|forbidden|too many requests|request blocked|rate.?limit/i.test(
+    `${error.stderr || ''} ${error.message || ''}`
   );
+}
+
+async function downloadVideo(url, directory, run = execFileAsync) {
+  const outputTemplate = path.join(directory, '%(id)s.%(ext)s');
+  const args = [
+    '--ignore-config',
+    '--no-playlist',
+    '--no-progress',
+    '--retries',
+    '3',
+    '--fragment-retries',
+    '3',
+    '--extractor-retries',
+    '3',
+    '--socket-timeout',
+    '30',
+    '--format',
+    'bestvideo*+bestaudio/best',
+    '--merge-output-format',
+    'mp4',
+    '--output',
+    outputTemplate
+  ];
+  const options = {
+    timeout: DOWNLOAD_TIMEOUT_MS,
+    maxBuffer: 10 * 1024 * 1024,
+    windowsHide: true
+  };
+
+  try {
+    await run('yt-dlp', [...args, url], options);
+  } catch (error) {
+    if (!shouldRetryWithImpersonation(error)) throw error;
+    await run('yt-dlp', [...args, '--impersonate', 'chrome', url], options);
+  }
 
   const files = await fs.readdir(directory);
   const videos = files.filter((file) =>
@@ -165,7 +183,19 @@ function getUserError(error) {
   if (error.killed) {
     return '❌ O download demorou demais e foi cancelado. Tente novamente.';
   }
-  return '❌ Não consegui baixar ou enviar esse vídeo. Confirme se o link é público e tente novamente.';
+  if (
+    /403|429|forbidden|too many requests|request blocked|rate.?limit|login required|sign in|private video/i.test(
+      `${error.stderr || ''} ${error.message || ''}`
+    )
+  ) {
+    return '❌ A plataforma bloqueou o acesso automatizado ou exige autorização. Um link visível publicamente também pode ter essa restrição; tente novamente mais tarde.';
+  }
+  if (/unsupported url|no video formats found|unable to extract|extractor error/i.test(
+    `${error.stderr || ''} ${error.message || ''}`
+  )) {
+    return '❌ O yt-dlp não conseguiu reconhecer esse vídeo. Atualize o yt-dlp e tente novamente; a plataforma pode ter alterado a página.';
+  }
+  return '❌ Falha ao baixar ou enviar o vídeo. Tente novamente mais tarde; o motivo detalhado foi registrado pelo bot.';
 }
 
 async function sendDownloadedVideo(bot, chatId, videoPath) {
@@ -293,6 +323,7 @@ if (require.main === module) {
 
 module.exports = {
   getSupportedMediaUrl,
+  downloadVideo,
   getCompressionBitrates,
   getUserError,
   handleMessage,

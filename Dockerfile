@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip3 install --break-system-packages -U yt-dlp
+RUN pip3 install --break-system-packages --pre -U "yt-dlp[default,curl-cffi]"
 
 WORKDIR /app
 

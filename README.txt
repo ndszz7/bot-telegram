@@ -17,7 +17,7 @@ INSTALACAO NO WINDOWS
 3. Abra um terminal nesta pasta e execute:
 
    npm ci
-   pip install -U yt-dlp
+   pip install --pre -U "yt-dlp[default,curl-cffi]"
 
 4. Configure o token na sessao atual do PowerShell (substitua pelo token novo):
 
@@ -36,7 +36,11 @@ esse terminal.
 EXECUCAO COM DOCKER / RENDER
 O Dockerfile instala as dependencias de sistema e o yt-dlp. Configure a variavel
 secreta TELEGRAM_BOT_TOKEN nas configuracoes do servico Render antes do deploy.
-O servico responde em /health para verificacoes de disponibilidade.
+O servico responde em /health para verificacoes de disponibilidade. A
+instalacao do yt-dlp usa a versao de desenvolvimento mais recente e o suporte
+a impersonacao HTTP, usado como segunda tentativa quando TikTok ou Instagram
+bloqueiam a requisicao normal. Depois de alterar o Dockerfile, faca um novo
+deploy para atualizar essa dependencia.
 
 USO
 Envie /start ou /help ao bot e depois envie um link HTTPS publico de video do
