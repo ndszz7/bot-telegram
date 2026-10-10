@@ -8,6 +8,7 @@ const { promisify } = require('util');
 
 const execFileAsync = promisify(execFile);
 const MAX_TELEGRAM_FILE_SIZE = 49 * 1024 * 1024;
+const COMPRESSION_TARGET_SIZE = 48 * 1024 * 1024;
 const DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000;
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.m4v', '.mov', '.mkv', '.webm']);
 
@@ -40,9 +41,7 @@ async function downloadVideo(url, directory) {
       '--no-playlist',
       '--no-progress',
       '--format',
-      'best[filesize<49M][ext=mp4]/best[filesize_approx<49M][ext=mp4]/best[ext=mp4]/best',
-      '--max-filesize',
-      '49M',
+      'best[ext=mp4]/best',
       '--merge-output-format',
       'mp4',
       '--output',
@@ -66,13 +65,91 @@ async function downloadVideo(url, directory) {
 
   const videoPath = path.join(directory, videos[0]);
   const { size } = await fs.stat(videoPath);
-  if (size > MAX_TELEGRAM_FILE_SIZE) {
-    const error = new Error('The downloaded video exceeds Telegram’s upload limit');
-    error.code = 'VIDEO_TOO_LARGE';
-    throw error;
+  if (size <= COMPRESSION_TARGET_SIZE) {
+    return videoPath;
   }
 
-  return videoPath;
+  return compressVideo(videoPath, directory);
+}
+
+function getCompressionBitrates(durationSeconds) {
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    throw new Error('Could not determine video duration for compression');
+  }
+
+  const totalKbps = (COMPRESSION_TARGET_SIZE * 8 * 0.88) / durationSeconds / 1000;
+  const audioKbps = Math.min(96, Math.max(16, Math.floor(totalKbps * 0.12)));
+  return {
+    videoKbps: Math.max(8, Math.floor(totalKbps - audioKbps)),
+    audioKbps
+  };
+}
+
+async function compressVideo(videoPath, directory) {
+  const { stdout } = await execFileAsync(
+    'ffprobe',
+    [
+      '-v',
+      'error',
+      '-show_entries',
+      'format=duration',
+      '-of',
+      'json',
+      videoPath
+    ],
+    { timeout: DOWNLOAD_TIMEOUT_MS, windowsHide: true }
+  );
+  const durationSeconds = Number(JSON.parse(stdout).format?.duration);
+  const bitrates = getCompressionBitrates(durationSeconds);
+  const compressedPath = path.join(directory, 'telegram-compressed.mp4');
+  let videoKbps = bitrates.videoKbps;
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await execFileAsync(
+      'ffmpeg',
+      [
+        '-y',
+        '-i',
+        videoPath,
+        '-map',
+        '0:v:0',
+        '-map',
+        '0:a:0?',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        '-b:v',
+        `${videoKbps}k`,
+        '-maxrate',
+        `${videoKbps}k`,
+        '-bufsize',
+        `${videoKbps * 2}k`,
+        '-c:a',
+        'aac',
+        '-b:a',
+        `${bitrates.audioKbps}k`,
+        '-movflags',
+        '+faststart',
+        compressedPath
+      ],
+      {
+        timeout: DOWNLOAD_TIMEOUT_MS,
+        maxBuffer: 2 * 1024 * 1024,
+        windowsHide: true
+      }
+    );
+
+    const { size } = await fs.stat(compressedPath);
+    if (size <= MAX_TELEGRAM_FILE_SIZE) {
+      return compressedPath;
+    }
+    videoKbps = Math.max(8, Math.floor(videoKbps * 0.75));
+  }
+
+  const error = new Error('The downloaded video exceeds Telegram’s upload limit');
+  error.code = 'VIDEO_TOO_LARGE';
+  throw error;
 }
 
 function getUserError(error) {
@@ -216,6 +293,7 @@ if (require.main === module) {
 
 module.exports = {
   getSupportedMediaUrl,
+  getCompressionBitrates,
   getUserError,
   handleMessage,
   sendDownloadedVideo,

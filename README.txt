@@ -3,7 +3,8 @@ BOT TELEGRAM - VIDEOS DO TIKTOK E INSTAGRAM
 REQUISITOS
 - Node.js 22 ou superior
 - Python 3 e yt-dlp instalados e disponiveis no PATH
-- ffmpeg instalado e disponivel no PATH (necessario para combinar alguns formatos)
+- ffmpeg e ffprobe instalados e disponiveis no PATH (necessarios para combinar
+  formatos e comprimir videos maiores que 48 MiB)
 - Um token de bot criado no Telegram pelo @BotFather
 
 IMPORTANTE: O token que estava gravado no codigo foi exposto. Revogue-o no
@@ -40,7 +41,9 @@ O servico responde em /health para verificacoes de disponibilidade.
 USO
 Envie /start ou /help ao bot e depois envie um link HTTPS publico de video do
 TikTok ou Instagram. O bot nao baixa playlists, conteudo privado ou conteudo que
-exija autenticacao. O tamanho enviado ao Telegram e limitado a 49 MiB.
+exija autenticacao. Videos acima de 48 MiB sao recomprimidos com ffmpeg antes do envio, para
+permanecer abaixo do limite de 49 MiB aceito pelo Telegram. O tempo de
+processamento pode aumentar para videos grandes.
 
 TESTES
 Execute npm test para rodar os testes locais. A inicializacao real tambem exige
