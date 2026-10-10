@@ -16,7 +16,7 @@ app.listen(process.env.PORT || 3000, () => {
 });
 
 // TOKEN
-const token = '8995772558:AAFRI3HbYzX1axKGRkEo2seMbLZ5LItrGgU';
+const token = '8995772558:AAGurC0cNIMz6mdAYSYYOv6xIa5KmNGPMo4';
 
 // BOT
 const bot = new TelegramBot(token, {
