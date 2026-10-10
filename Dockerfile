@@ -1,8 +1,10 @@
-FROM node:20
+FROM node:22-slim
 
-RUN apt-get update && \
-    apt-get install -y ffmpeg python3 python3-pip && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    python3 \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN pip3 install --break-system-packages -U yt-dlp
 
@@ -10,8 +12,10 @@ WORKDIR /app
 
 COPY package*.json ./
 
-RUN npm install
+RUN npm ci --omit=dev
 
 COPY . .
 
-CMD ["node", "index.js"]
+ENV NODE_ENV=production
+
+CMD ["npm", "start"]
